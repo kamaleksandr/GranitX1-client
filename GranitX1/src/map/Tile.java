@@ -82,13 +82,13 @@ public class Tile extends AbstractTask {
     }
 
     /**
-     * Set image and status "loaded".
+     * Set image and status "done".
      *
      * @param image
      */
     public void SetImage(BufferedImage image) {
         this.image = image;
-        status = StatusEnum.loaded;
+        status = StatusEnum.done;
     }
 
     public String CacheFileName() {

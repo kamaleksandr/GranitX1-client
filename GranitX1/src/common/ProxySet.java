@@ -9,26 +9,12 @@ import java.util.Base64;
  */
 public class ProxySet {
 
-    private String address;
-    private int port;
-    private String login;
-    private String password;  
+    public String address;
+    public Integer port;
+    public String login;
+    public String password;  
 
     public ProxySet() {
-    }
-
-    /**
-     * @param address the address to set
-     */
-    public void setAddress(String address) {
-        this.address = address;
-    }
-
-    /**
-     * @param port the port to set
-     */
-    public void setPort(int port) {
-        this.port = port;
     }
 
     /**
@@ -36,13 +22,6 @@ public class ProxySet {
      */
     public InetSocketAddress getSocketAddress() {
         return new InetSocketAddress(address, port);
-    }
-
-    /**
-     * @param login the login to set
-     */
-    public void setLogin(String login) {
-        this.login = login;
     }
 
     /**

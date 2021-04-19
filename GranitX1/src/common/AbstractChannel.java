@@ -1,10 +1,9 @@
 package common;
 
+import common.custom.EventListener;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
 
 /**
  * Abstract class, provides common functionality of OSI application layer.
@@ -13,9 +12,9 @@ import javax.swing.event.ChangeListener;
  */
 public abstract class AbstractChannel extends TCPChannel {
 
-    protected ByteBuffer buf;
+    protected ByteBuffer buffer;
 
-    public final LinkedList<ChangeListener> OnPacket;
+    public final LinkedList<EventListener> OnPacket;
     public AbstractTask task;
 
     public AbstractChannel(SocketAddress address) throws Exception {
@@ -25,29 +24,20 @@ public abstract class AbstractChannel extends TCPChannel {
     }
 
     public ByteBuffer getInputBuffer() {
-        return buf;
+        return buffer;
     }
 
     protected void Packet() {
-        ChangeEvent event = new ChangeEvent(this);
         OnPacket.forEach((cl) -> {
-            cl.stateChanged(event);
+            cl.Occurred(this);
         });
-    }
-
-    protected void Error(Exception ex) {
-        ChangeEvent event = new ChangeEvent(ex);
-        getOnError().forEach((cl) -> {
-            cl.stateChanged(event);
-        });
-        setStatus(StatusEnum.error);
     }
 
     /**
      * Sub-classes should override this to handle tcp read event.
      *
-     * @param event
+     * @param object
      */
-    protected abstract void OnTCPRead(ChangeEvent event);
+    protected abstract void OnTCPRead(Object object);
 
 }

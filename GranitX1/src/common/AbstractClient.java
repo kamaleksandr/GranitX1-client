@@ -1,13 +1,12 @@
 package common;
 
+import common.custom.EventListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.ListIterator;
 import javax.swing.Timer;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
 
 /**
  * The abstract class, provides common functionality for client-server
@@ -17,28 +16,32 @@ import javax.swing.event.ChangeListener;
  */
 public abstract class AbstractClient {
 
-    private final ChangeListener PacketListener = this::OnChannelPacket;
-    private final ChangeListener StatusListener = this::OnChannelStatus;
-    private final ChangeListener ErrorListener = this::OnChannelError;
+    private final EventListener PacketListener = this::OnChannelPacket;
+    private final EventListener StatusListener = this::OnChannelStatus;
+    private final EventListener LogListener = this::Log;
     private final Timer timer;
 
-    public final LinkedList<ChangeListener> OnError;
-    public final LinkedList<ChangeListener> OnData;
+    public final LinkedList<EventListener> OnLog;
+    public final LinkedList<EventListener> OnData;
+    public final LinkedList<EventListener> OnConnect;
 
     protected int relevance_timeout = 10;
     protected int read_timeout = 5;
     protected final LinkedList<AbstractChannel> channels;
     protected final LinkedList<AbstractTask> tasks;
     protected final Object lock;
+    protected boolean keep_connect;
 
     public AbstractClient() {
         lock = new Object();
         channels = new LinkedList<>();
-        OnError = new LinkedList<>();
+        OnLog = new LinkedList<>();
         OnData = new LinkedList<>();
+        OnConnect = new LinkedList<>();
         TimerHandler timer_handler = new TimerHandler();
         timer = new Timer(1000, timer_handler);
         tasks = new LinkedList<>();
+        keep_connect = false;
     }
 
     protected void OnMainTimer() {
@@ -46,44 +49,37 @@ public abstract class AbstractClient {
     }
 
     private class TimerHandler implements ActionListener {
+
         @Override
         public void actionPerformed(ActionEvent ts) {
-            OnMainTimer();         
+            OnMainTimer();
         }
     }
 
     /**
      * Subclasses must override this to handle the received packet.
      *
-     * @param event The event source is instance of AbstractChannel
+     * @param object instance of AbstractChannel
      */
-    protected abstract void OnChannelPacket(ChangeEvent event);
+    protected abstract void OnChannelPacket(Object object);
 
-    protected void OnChannelStatus(ChangeEvent event) {
-        AbstractChannel channel = (AbstractChannel)event.getSource();
+    protected void OnChannelStatus(Object object) {
+        AbstractChannel channel = (AbstractChannel) object;
         AbstractChannel.StatusEnum status = channel.getStatus();
         if (status == AbstractChannel.StatusEnum.ready) {
             Maintenance();
         }
     }
 
-    private void OnChannelError(ChangeEvent event) {
-        OnError.forEach((cl) -> {
-            cl.stateChanged(event);
+    protected void Log(Object object) {
+        OnLog.forEach((el) -> {
+            el.Occurred(object);
         });
     }
 
-    protected final void Error(Exception ex) {
-        ChangeEvent event = new ChangeEvent(ex);
-        OnError.forEach((cl) -> {
-            cl.stateChanged(event);
-        });
-    }
-
-    protected final void Data(Object object) {
-        ChangeEvent event = new ChangeEvent(object);
-        OnData.forEach((cl) -> {
-            cl.stateChanged(event);
+    protected void Data(AbstractTask task) {
+        OnData.forEach((el) -> {
+            el.Occurred(task);
         });
     }
 
@@ -94,11 +90,11 @@ public abstract class AbstractClient {
         if (channel != null) {
             channel.OnPacket.add(PacketListener);
             channel.OnStatus.add(StatusListener);
-            channel.getOnError().add(ErrorListener);
+            channel.OnLog.add(LogListener);
             try {
                 channel.Open();
             } catch (Exception ex) {
-                Error(ex);
+                Log(ex);
                 CloseChannel(channel);
                 return null;
             }
@@ -110,20 +106,22 @@ public abstract class AbstractClient {
         try {
             channel.Close();
         } catch (Exception ex) {
-            Error(ex);
+            Log(ex);
         }
     }
 
     protected void Maintenance() {
         synchronized (lock) {
-            boolean is_prepared = false;
+            boolean is_prepared = keep_connect;
             ListIterator<AbstractTask> it_task = tasks.listIterator();
             while (it_task.hasNext()) {
                 AbstractTask task = it_task.next();
                 AbstractTask.StatusEnum status = task.getStatus();
-                if (status == AbstractTask.StatusEnum.loaded) {
+
+                if (status == AbstractTask.StatusEnum.done) {
                     continue;
                 }
+
                 if (status == AbstractTask.StatusEnum.prepared) {
                     if (task.IsTimeout(relevance_timeout)) {
                         Data(task);
@@ -165,12 +163,35 @@ public abstract class AbstractClient {
             } else if (channel.getStatus() == AbstractChannel.StatusEnum.ready) {
                 SetChannelTask(channel);
             }
+
         }
     }
 
-    protected abstract ByteBuffer getRequestData(AbstractTask task)throws Exception;
+    public boolean Connected() {
+        ListIterator<AbstractChannel> it_channel = channels.listIterator();
+        synchronized (lock) {
+            while (it_channel.hasNext()) {
+                AbstractChannel channel = it_channel.next();
+                if (channel != null) {
+                    if (channel.getStatus() == AbstractChannel.StatusEnum.ready){
+                        return true;
+                    }
+                }
+
+
+            }
+        }
+        return false;
+    }
+
+    protected abstract ByteBuffer getRequestData(AbstractTask task) throws Exception;
 
     protected void SetChannelTask(AbstractChannel channel) {
+        if (channel.task != null) {
+            if (channel.task.status == AbstractTask.StatusEnum.exspired) {
+                channel.task = null;
+            }
+        }
         if (channel.task == null) {
             ListIterator<AbstractTask> it = tasks.listIterator();
             while (it.hasNext()) {
@@ -178,12 +199,10 @@ public abstract class AbstractClient {
                 if (task.getStatus() == AbstractTask.StatusEnum.prepared) {
                     channel.task = task;
                     try {
-                        ByteBuffer buf = getRequestData(task);
-                        channel.Send(buf);
-                        task.SetRequested();
+                        channel.Send(getRequestData(task));
                         break;
                     } catch (Exception ex) {
-                        Error(ex);
+                        Log(ex);
                     }
                 }
             }
@@ -208,7 +227,7 @@ public abstract class AbstractClient {
                 try {
                     channel.Close();
                 } catch (Exception ex) {
-                    Error(ex);
+                    Log(ex);
                 }
             }
         });

@@ -3,53 +3,41 @@ package common;
 import org.eclipse.paho.client.mqttv3.internal.wire.MqttWireMessage;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import javax.swing.event.ChangeEvent;
+import java.nio.ByteOrder;
 import org.eclipse.paho.client.mqttv3.MqttException;
 
 /**
- *
  * @author kamyshev.a
  */
 public class MQTTChannel extends AbstractChannel {
 
-    private static final int MAX_PACK_SIZE = 65535;
-    private static final int REC_BUF_SIZE = 65535;
+    private static final int MAX_PACK_SIZE = 65535000;
 
-    private MqttWireMessage message = null;
+    public MqttWireMessage message;
 
     public MQTTChannel(SocketAddress address) throws Exception {
         super(address);
-        buf = ByteBuffer.allocate(REC_BUF_SIZE);
+        buffer = ByteBuffer.allocate(MAX_PACK_SIZE);
     }
-    
-    /**
-     * @return the mess
-     */
-    public MqttWireMessage getMessage() {
-        return message;
-    }    
 
-    private int RequiredSize(int offset) throws Exception {
-        int size = buf.position() - offset;
+    private int RequiredSize(ByteBuffer data) throws Exception {
+        int size = data.limit();
         if (size > MAX_PACK_SIZE) {
             size = MAX_PACK_SIZE;
         }
-        if (size == 0) {
-            return 0;
-        }
-        int first = Byte.toUnsignedInt(buf.get(offset));
-        byte type = (byte)(first >> 4);
+        int first = Byte.toUnsignedInt(data.get());
+        byte type = (byte) (first >> 4);
         if ((type < MqttWireMessage.MESSAGE_TYPE_CONNECT)
                 || (type > MqttWireMessage.MESSAGE_TYPE_DISCONNECT)) {
-            throw new Exception("MQTT header fail, invalid message type");
+            //throw new Exception("MQTT header fail, invalid message type");
         }
         int rem_length = 0, pos = 1;
         for (; pos < 5; pos++) {
             if (size < pos) {
                 return -1; // expect more data
             }
-            byte val = buf.get(offset + pos);
-            rem_length |= (val & 0x7f) << (7 * (pos - 1));
+            byte val = data.get(pos);
+            rem_length |= (val & 0x7fL) << (7 * (pos - 1));
             if ((val & 0x80) == 0) {
                 break;
             }
@@ -57,57 +45,54 @@ public class MQTTChannel extends AbstractChannel {
         if (pos++ == 5) { // no terminal flag found
             throw new Exception("MQTT header fail, no terminal flag");
         }
+        data.position(0);
         if (size < rem_length + pos) {
             return size - rem_length - pos;
         }
         return rem_length + pos;
     }
-
+    
     @Override
-    protected void OnTCPRead(ChangeEvent event) {
-        try {
-            buf = Receive(buf);
-        } catch (Exception ex) {
-            Error(ex);
-            return;
-        }
-        if (buf.position() == 0) {
-            setStatus(StatusEnum.disconnect);
-            return;
-        }
-        int pos = 0, size;
-        while (true) {
+    protected void AfterSSLUnwrap(ByteBuffer data){
+        int size;
+        while (data.position() > 0) {
+            data.flip();
             try {
-                size = RequiredSize(pos);
+                size = RequiredSize(data);
             } catch (Exception ex) {
-                Error(ex);
-                break;
-            }
-            if (size == 0) {
+                Error("RequiredSize() fail, " + ex);
+                buffer.clear();
                 break;
             }
             if (size < 0) { // not enough data
-                if (buf.position() - pos - size > MAX_PACK_SIZE) {
+                if (data.limit() - size > MAX_PACK_SIZE) {
                     Error(new Exception("MQTT header fail, remaining length too large"));
-                    break;
+                    buffer.clear();
                 }
-                if (pos != 0) {       
-                    buf.compact();
-                    return;
-                }
+                data.compact();
+                break;
             }
-            byte[] data = new byte[size];
-            System.arraycopy(buf.array(), pos, data, 0, size);
+
             try {
-                message = MqttWireMessage.createWireMessage(data);                                                                            
+                message = MqttWireMessage.createWireMessage(data.array());
             } catch (MqttException ex) {
-                Error(ex);
+                Log("MQTT parsing fail " + ex);
                 break;
             }
             Packet();
-            pos += size;
+            message = null;
+            data.position(size);
+            data.compact();
         }
-        buf.clear();
+    }
+
+    @Override
+    protected void OnTCPRead(Object object) {
+        try {
+            Receive(buffer);
+        } catch (Exception ex) {
+            Error(ex);
+        }    
     }
 
 }

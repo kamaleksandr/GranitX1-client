@@ -1,11 +1,9 @@
-
 package common;
 
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
-import javax.swing.event.ChangeEvent;
 
 /**
  *
@@ -19,7 +17,7 @@ public class HTTPChannel extends AbstractChannel {
 
     public HTTPChannel(SocketAddress address) throws Exception {
         super(address);
-        buf = ByteBuffer.allocate(REC_BUF_SIZE);
+        buffer = ByteBuffer.allocate(REC_BUF_SIZE);
     }
 
     /**
@@ -28,6 +26,14 @@ public class HTTPChannel extends AbstractChannel {
     public String getHeader() {
         return header;
     }
+
+    /**
+     *
+     * @return Input ByteBuffer
+     */
+    //public ByteBuffer getInputBuffer() {
+    //    return buffer;
+    //}
 
     /**
      * @return the content position
@@ -44,26 +50,26 @@ public class HTTPChannel extends AbstractChannel {
     }
 
     @Override
-    protected void OnTCPRead(ChangeEvent event) {           
+    protected void OnTCPRead(Object object) {
         try {
-            buf = Receive(buf);
+            Receive(buffer);
         } catch (Exception ex) {
             Error(ex);
             return;
         }
-        if (buf.position() == 0) {
+        if (buffer.position() == 0) {
             setStatus(StatusEnum.disconnect);
             return;
         }
         header = null;
         content_position = 0;
         content_length = 0;
-        for (; content_position + 3 < buf.position(); content_position++) {
-            if (buf.get(content_position) == '\r'
-                    && buf.get(content_position + 1) == '\n'
-                    && buf.get(content_position + 2) == '\r'
-                    && buf.get(content_position + 3) == '\n') {
-                header = new String(buf.array(), 0, content_position, StandardCharsets.US_ASCII);
+        for (; content_position + 3 < buffer.position(); content_position++) {
+            if (buffer.get(content_position) == '\r'
+                    && buffer.get(content_position + 1) == '\n'
+                    && buffer.get(content_position + 2) == '\r'
+                    && buffer.get(content_position + 3) == '\n') {
+                header = new String(buffer.array(), 0, content_position, StandardCharsets.US_ASCII);
                 break;
             }
         }
@@ -74,21 +80,21 @@ public class HTTPChannel extends AbstractChannel {
         int index = header.indexOf("Content-Length: ");
         if (index == -1) {
             Packet();
-            buf.clear();
+            buffer.clear();
             return;
-        }  
+        }
         Scanner scanner = new Scanner(header.substring(index + 16));
         if (scanner.hasNextInt()) {
             content_length = scanner.nextInt();
         }
         if (content_length + content_position > REC_BUF_SIZE) {
-            Error( new Exception("Overload REC_BUF_SIZE") );
-            buf.clear();
+            Error(new Exception("Overload REC_BUF_SIZE"));
+            buffer.clear();
             return;
         }
-        if (buf.position() >= content_length + content_position) {
+        if (buffer.position() >= content_length + content_position) {
             Packet();
-            buf.clear();
+            buffer.clear();
         }
     }
 }

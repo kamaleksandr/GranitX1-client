@@ -23,32 +23,37 @@ public class SSLClient {
 
     private static final String SSL_PROTOCOL_NAME = "TLSv1.2";
     private final SSLEngine engine;
-    private final int buf_size;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    protected ExecutorService executor = Executors.newSingleThreadExecutor();
+    protected SSLEngineResult result;
 
     private static class AcceptAllTrustManager implements X509TrustManager {
 
         @Override
-        public void checkClientTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
+        public void checkClientTrusted(X509Certificate[] arg0, String arg1)
+                throws CertificateException {
         }
 
         @Override
-        public void checkServerTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
+        public void checkServerTrusted(X509Certificate[] arg0, String arg1)
+                throws CertificateException {
         }
 
         @Override
         public X509Certificate[] getAcceptedIssuers() {
-            return null;
+            X509Certificate[] certificate = new X509Certificate[0];
+            return certificate;
         }
     }
 
     SSLClient() throws Exception {
         SSLContext context = SSLContext.getInstance(SSL_PROTOCOL_NAME);
-        context.init(new KeyManager[0], new TrustManager[]{new AcceptAllTrustManager()}, new SecureRandom());
+        context.init(new KeyManager[0], new TrustManager[]{
+            new AcceptAllTrustManager()}, new SecureRandom());
         engine = context.createSSLEngine();
         engine.setUseClientMode(true);
-        buf_size = engine.getSession().getPacketBufferSize();
+        result = new SSLEngineResult(SSLEngineResult.Status.CLOSED,
+                HandshakeStatus.NOT_HANDSHAKING, 0, 0);
     }
 
     public HandshakeStatus getStatus() {
@@ -58,16 +63,19 @@ public class SSLClient {
     /**
      * @return the buf_size
      */
-    public int getBuf_size() {
-        return buf_size;
+    public int getBufSize() {
+        return engine.getSession().getPacketBufferSize();
     }
 
     public void BeginHandshake() throws SSLException {
         engine.beginHandshake();
     }
 
-    private void NotOkResult(SSLEngineResult result) throws Exception {
+    public void Unwrap(ByteBuffer src, ByteBuffer dst) throws Exception {
+        result = engine.unwrap(src, dst);
         switch (result.getStatus()) {
+            case OK:
+                break;
             case BUFFER_OVERFLOW:
                 throw new Exception("SSL client: Buffer overflow");
             case BUFFER_UNDERFLOW:
@@ -77,34 +85,18 @@ public class SSLClient {
         }
     }
 
-    public ByteBuffer Unwrap(ByteBuffer data) throws Exception {
-        ByteBuffer unwrap_data = ByteBuffer.allocate(data.capacity());
-        SSLEngineResult result;
-        result = engine.unwrap(data, unwrap_data);
-        if (result.getStatus() == SSLEngineResult.Status.OK) {
-            return unwrap_data;
-        } else {
-            NotOkResult(result);
+    public void Wrap(ByteBuffer src, ByteBuffer dst) throws Exception {
+        result = engine.wrap(src, dst);
+        switch (result.getStatus()) {
+            case OK:
+                break;
+            case BUFFER_OVERFLOW:
+                throw new Exception("SSL client: Buffer overflow");
+            case BUFFER_UNDERFLOW:
+                throw new Exception("SSL client: Buffer underflow");
+            case CLOSED:
+                throw new Exception("SSL client: Closed");
         }
-        return null;
-    }
-
-    public ByteBuffer Wrap(ByteBuffer data) throws Exception {
-
-        ByteBuffer wrap_data;
-        if (data.capacity() > buf_size) {
-            wrap_data = ByteBuffer.allocate(data.capacity());
-        } else {
-            wrap_data = ByteBuffer.allocate(buf_size);
-        }
-        SSLEngineResult result;
-        result = engine.wrap(data, wrap_data);
-        if (result.getStatus() == SSLEngineResult.Status.OK) {
-            return wrap_data;
-        } else {
-            NotOkResult(result);
-        }
-        return null;
     }
 
     void DelegateTask() {

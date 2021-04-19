@@ -10,14 +10,8 @@ import java.util.*;
 public class Entity {
 
     public int num, type;
-    public final TreeSet<Attribute> attributes;
-    private final Comparator<Attribute> comparator = (Attribute o1, Attribute o2) -> {
-        if (o1.type == o2.type) {
-            return o1.num - o2.num;
-        } else {
-            return o1.type - o2.type;
-        }
-    };
+
+    public final LinkedList<Attribute> attributes;
 
     /**
      *
@@ -27,6 +21,6 @@ public class Entity {
     public Entity(int num, int type) {
         this.num = num;
         this.type = type;
-        attributes = new TreeSet<>(comparator);
+        attributes = new LinkedList<>();
     }
 }

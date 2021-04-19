@@ -7,7 +7,7 @@ package common;
 public abstract class AbstractTask {
 
     public enum StatusEnum {
-        prepared, requested, loaded, exspired
+        prepared, requested, done, exspired
     }
 
     private long time;
